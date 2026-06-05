@@ -46,6 +46,8 @@ export default function App() {
   const [height, setHeight] = useState(() => localStorage.getItem("userHeight") || "170");
   const [showSettings, setShowSettings] = useState(false);
   const [tab, setTab] = useState("record"); // record | chart | history
+  const [editRecord, setEditRecord] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
   // 身長保存
   useEffect(() => {
@@ -102,6 +104,74 @@ export default function App() {
     }
   };
 
+  // 編集モーダルを開く
+  const handleEditOpen = (record) => {
+    setEditRecord(record);
+    setEditForm({
+      datetime: record.timestamp ? record.timestamp.slice(0, 16) : "",
+      systolic: record.systolic || "",
+      diastolic: record.diastolic || "",
+      pulse: record.pulse || "",
+      weight: record.weight || "",
+      location: record.location || "自宅",
+      memo: record.memo || ""
+    });
+  };
+
+  // 記録を更新
+  const handleUpdate = async () => {
+    if (!editForm.systolic || !editForm.diastolic) {
+      alert("収縮期・拡張期血圧は必須です");
+      return;
+    }
+    const newTimestamp = editForm.datetime
+      ? editForm.datetime + ":00.000Z"
+      : editRecord.timestamp;
+    const bmi = calcBMI(editForm.weight, height);
+    const payload = {
+      action: "update",
+      originalTimestamp: editRecord.timestamp,
+      timestamp: newTimestamp,
+      systolic: editForm.systolic,
+      diastolic: editForm.diastolic,
+      pulse: editForm.pulse,
+      weight: editForm.weight,
+      bmi: bmi || "",
+      location: editForm.location,
+      memo: editForm.memo
+    };
+    try {
+      setLoading(true);
+      await fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setEditRecord(null);
+      await fetchRecords();
+    } catch (e) {
+      alert("更新に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 記録を削除
+  const handleDelete = async (record) => {
+    if (!window.confirm(`この記録を削除しますか？\n${record.timestamp ? record.timestamp.replace("T", " ").slice(0, 16) : "---"}`)) return;
+    try {
+      setLoading(true);
+      await fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "delete", timestamp: record.timestamp })
+      });
+      await fetchRecords();
+    } catch (e) {
+      alert("削除に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // チャート用データ整形（最新20件）
   const chartData = [...records]
     .reverse()
@@ -118,6 +188,8 @@ export default function App() {
   const bmiStatus = getBMIStatus(bmi);
   const bpStatus = getBPStatus(parseInt(form.systolic), parseInt(form.diastolic));
 
+  const editBpStatus = getBPStatus(parseInt(editForm.systolic), parseInt(editForm.diastolic));
+
   return (
     <div style={{
       minHeight: "100vh",
@@ -126,6 +198,190 @@ export default function App() {
       fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif",
       padding: "0 0 80px 0"
     }}>
+
+      {/* ===== 編集モーダル ===== */}
+      {editRecord && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.75)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16
+        }}>
+          <div style={{
+            background: "#1e293b",
+            borderRadius: 16,
+            padding: 24,
+            width: "100%",
+            maxWidth: 480,
+            border: "1px solid rgba(99,179,237,0.35)",
+            maxHeight: "90vh",
+            overflowY: "auto"
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#63b3ed", marginBottom: 20 }}>
+              ✏️ 記録を編集
+            </div>
+
+            {/* 日時 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>
+                📅 日時
+              </label>
+              <input
+                type="datetime-local"
+                value={editForm.datetime}
+                onChange={(e) => setEditForm({ ...editForm, datetime: e.target.value })}
+                style={{ ...inputStyle, colorScheme: "dark" }}
+              />
+            </div>
+
+            {/* 血圧 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>
+                🩺 血圧 (mmHg)
+              </label>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>収縮期（上）</div>
+                  <input
+                    type="number"
+                    value={editForm.systolic}
+                    onChange={(e) => setEditForm({ ...editForm, systolic: e.target.value })}
+                    placeholder="120"
+                    style={inputStyle}
+                  />
+                </div>
+                <span style={{ color: "#475569", fontSize: 20, paddingTop: 20 }}>/</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>拡張期（下）</div>
+                  <input
+                    type="number"
+                    value={editForm.diastolic}
+                    onChange={(e) => setEditForm({ ...editForm, diastolic: e.target.value })}
+                    placeholder="80"
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+              {editForm.systolic && editForm.diastolic && (
+                <div style={{ marginTop: 6, fontSize: 12, color: editBpStatus.color }}>
+                  判定: {editBpStatus.label}
+                </div>
+              )}
+            </div>
+
+            {/* 脈拍 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>
+                💓 脈拍 (bpm)
+              </label>
+              <input
+                type="number"
+                value={editForm.pulse}
+                onChange={(e) => setEditForm({ ...editForm, pulse: e.target.value })}
+                placeholder="70"
+                style={{ ...inputStyle, width: "50%" }}
+              />
+            </div>
+
+            {/* 体重 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>
+                ⚖ 体重 (kg)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={editForm.weight}
+                onChange={(e) => setEditForm({ ...editForm, weight: e.target.value })}
+                placeholder="65.0"
+                style={{ ...inputStyle, width: "50%" }}
+              />
+            </div>
+
+            {/* 場所 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>
+                📍 測定場所
+              </label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {LOCATIONS.map((loc) => (
+                  <button
+                    key={loc}
+                    onClick={() => setEditForm({ ...editForm, location: loc })}
+                    style={{
+                      background: editForm.location === loc ? "rgba(99,179,237,0.2)" : "rgba(15,23,42,0.6)",
+                      border: editForm.location === loc ? "1px solid #63b3ed" : "1px solid rgba(99,179,237,0.2)",
+                      borderRadius: 8,
+                      color: editForm.location === loc ? "#63b3ed" : "#94a3b8",
+                      padding: "8px 14px",
+                      cursor: "pointer",
+                      fontSize: 14,
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    {loc}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* メモ */}
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>
+                📝 メモ
+              </label>
+              <textarea
+                value={editForm.memo}
+                onChange={(e) => setEditForm({ ...editForm, memo: e.target.value })}
+                placeholder="気になること、体調など..."
+                rows={3}
+                style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+              />
+            </div>
+
+            {/* ボタン */}
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                onClick={() => setEditRecord(null)}
+                style={{
+                  flex: 1,
+                  background: "rgba(100,116,139,0.2)",
+                  border: "1px solid rgba(100,116,139,0.4)",
+                  borderRadius: 10,
+                  color: "#94a3b8",
+                  padding: "12px",
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: "pointer"
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleUpdate}
+                disabled={loading}
+                style={{
+                  flex: 2,
+                  background: loading ? "rgba(99,179,237,0.2)" : "linear-gradient(135deg, #2563eb, #1d4ed8)",
+                  border: "none",
+                  borderRadius: 10,
+                  color: "#fff",
+                  padding: "12px",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: loading ? "not-allowed" : "pointer"
+                }}
+              >
+                {loading ? "保存中..." : "💾 保存する"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ヘッダー */}
       <div style={{
         background: "rgba(15,23,42,0.9)",
@@ -584,6 +840,39 @@ export default function App() {
                         📝 {r.memo}
                       </div>
                     )}
+                    {/* 編集・削除ボタン */}
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+                      <button
+                        onClick={() => handleEditOpen(r)}
+                        style={{
+                          background: "rgba(99,179,237,0.1)",
+                          border: "1px solid rgba(99,179,237,0.3)",
+                          borderRadius: 6,
+                          color: "#63b3ed",
+                          padding: "5px 12px",
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 600
+                        }}
+                      >
+                        ✏️ 編集
+                      </button>
+                      <button
+                        onClick={() => handleDelete(r)}
+                        style={{
+                          background: "rgba(239,68,68,0.1)",
+                          border: "1px solid rgba(239,68,68,0.3)",
+                          borderRadius: 6,
+                          color: "#ef4444",
+                          padding: "5px 12px",
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 600
+                        }}
+                      >
+                        🗑️ 削除
+                      </button>
+                    </div>
                   </div>
                 );
               })}
