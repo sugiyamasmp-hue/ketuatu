@@ -58,7 +58,7 @@ export default function App() {
   const fetchRecords = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${GAS_URL}?action=get`);
+      const res = await fetch(`${GAS_URL}?action=get`, { cache: "no-store" });
       const data = await res.json();
       setRecords(data.records || []);
     } catch (e) {
@@ -124,7 +124,11 @@ export default function App() {
       alert("収縮期・拡張期血圧は必須です");
       return;
     }
-    const newTimestamp = editForm.datetime
+    // 日時をユーザーが変更した場合のみ新しいタイムスタンプを生成する。
+    // 変更していない場合は元のタイムスタンプ（秒・ミリ秒含む）をそのまま使う。
+    // これにより GAS 側で originalTimestamp による行検索が常に成功する。
+    const originalDatetime = editRecord.timestamp ? editRecord.timestamp.slice(0, 16) : "";
+    const newTimestamp = (editForm.datetime && editForm.datetime !== originalDatetime)
       ? editForm.datetime + ":00.000Z"
       : editRecord.timestamp;
     const bmi = calcBMI(editForm.weight, height);
@@ -142,14 +146,16 @@ export default function App() {
     };
     try {
       setLoading(true);
-      await fetch(GAS_URL, {
+      const res = await fetch(GAS_URL, {
         method: "POST",
         body: JSON.stringify(payload)
       });
+      const result = await res.json();
+      if (result.error) throw new Error(result.error);
       setEditRecord(null);
       await fetchRecords();
     } catch (e) {
-      alert("更新に失敗しました");
+      alert("更新に失敗しました: " + (e.message || String(e)));
     } finally {
       setLoading(false);
     }
