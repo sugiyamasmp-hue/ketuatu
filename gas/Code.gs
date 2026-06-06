@@ -10,25 +10,35 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
-  if (data.action === "add")    return addRecord(data);
-  if (data.action === "update") return updateRecord(data);
-  if (data.action === "delete") return deleteRecord(data);
-  return respond({ error: "Unknown action" });
+  try {
+    const data = JSON.parse(e.postData.contents);
+    if (data.action === "add")    return addRecord(data);
+    if (data.action === "update") return updateRecord(data);
+    if (data.action === "delete") return deleteRecord(data);
+    return respond({ error: "Unknown action: " + data.action });
+  } catch (err) {
+    return respond({ error: "Parse error: " + err.message });
+  }
 }
 
 function getSheet() {
   return SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 }
 
+// セル値を ISO タイムスタンプ文字列に変換（Date 型にも対応）
+function cellToTimestamp(val) {
+  if (val instanceof Date) return val.toISOString();
+  return String(val);
+}
+
 function getRecords() {
   const sheet = getSheet();
   const rows = sheet.getDataRange().getValues();
-  // ISO timestamp（2026-xx-xxT...）の行のみ取得し、ヘッダー行を除外
   const records = rows
-    .filter(row => /^\d{4}-\d{2}-\d{2}T/.test(String(row[0])))
+    .map(row => ({ ...row, _ts: cellToTimestamp(row[0]) }))
+    .filter(row => /^\d{4}-\d{2}-\d{2}T/.test(row._ts))
     .map(row => ({
-      timestamp: String(row[0]),
+      timestamp: row._ts,
       systolic:  String(row[1]),
       diastolic: String(row[2]),
       pulse:     String(row[3]),
@@ -38,7 +48,7 @@ function getRecords() {
       memo:      String(row[7])
     }));
   records.reverse(); // 新しい順
-  return respond({ records: records });
+  return respond({ success: true, records: records });
 }
 
 function addRecord(data) {
@@ -57,10 +67,12 @@ function addRecord(data) {
 }
 
 // タイムスタンプで行を検索（1-indexed 行番号、見つからなければ -1）
+// Date 型セルにも対応
 function findRowByTimestamp(sheet, timestamp) {
   const values = sheet.getDataRange().getValues();
+  const target = String(timestamp);
   for (let i = 0; i < values.length; i++) {
-    if (String(values[i][0]) === String(timestamp)) return i + 1;
+    if (cellToTimestamp(values[i][0]) === target) return i + 1;
   }
   return -1;
 }
@@ -105,33 +117,26 @@ function migrateColumns() {
   const values = sheet.getDataRange().getValues();
 
   const newValues = values.map((row, idx) => {
-    // ヘッダー行
     if (idx === 0) {
       return ['日時', '収縮期', '拡張期', '脈拍', '体重', 'BMI', '場所', 'メモ'];
     }
-
     const ts   = row[0];
     const sys  = row[1];
     const dia  = row[2];
     const pulse= row[3];
-    const colE = row[4]; // 旧: 場所 or 新: 体重
-    const colF = row[5]; // 旧: メモ  or 新: BMI
-    const colG = row[6]; // 旧: 体重  or 新: 場所
+    const colE = row[4];
+    const colF = row[5];
+    const colG = row[6];
     const colH = row[7] !== undefined ? row[7] : '';
 
-    // 旧形式判定: E列に場所の値（自宅/病院/DS/その他）が入っている
     if (LOCATIONS.includes(String(colE).trim())) {
-      // 旧形式: E=場所, F=メモ, G=体重  →  E=体重, F=BMI(空), G=場所, H=メモ
       return [ts, sys, dia, pulse, colG, '', colE, colF];
     } else {
-      // 新形式: E=体重, F=BMI, G=場所, H=メモ（すでに正しい）
       return [ts, sys, dia, pulse, colE, colF, colG, colH];
     }
   });
 
-  // シート全体をクリアして書き直す
   sheet.clearContents();
   sheet.getRange(1, 1, newValues.length, 8).setValues(newValues);
-
   Logger.log('移行完了: ' + (newValues.length - 1) + '件のデータを変換しました');
 }
