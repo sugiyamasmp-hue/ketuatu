@@ -4,7 +4,7 @@ import {
   Legend, ResponsiveContainer, ReferenceLine
 } from "recharts";
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwqF4wpWGegJoUnXOhbBqbJPHDVtsLkbyXhqCqly4yiFPCBSk2B3skFnvVr1LU2cEw1/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbykX_cdAUPiprx0hjmCsCNQkwONCm1YG4swuE8SmOMiFPQGUs8ZZho_ozJstDJ5P9lR/exec";
 const LOCATIONS = ["自宅", "病院", "DS", "その他"];
 
 // BMI計算
