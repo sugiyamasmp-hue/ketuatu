@@ -51,7 +51,13 @@ const rowToRecord = (row) => ({
 export default function App() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
+  const getNow = () => {
+    const now = new Date();
+    return now.toISOString().slice(0, 16); // "2026-06-09T10:30" 形式
+  };
+
   const [form, setForm] = useState({
+    date: getNow(),
     systolic: "", diastolic: "", pulse: "", weight: "",
     location: "自宅", memo: ""
   });
@@ -96,8 +102,7 @@ export default function App() {
       alert("収縮期・拡張期血圧は必須です");
       return;
     }
-    const now = new Date();
-    const dateStr = now.toISOString().replace("T", " ").slice(0, 19);
+    const dateStr = form.date.replace("T", " ") + ":00";
     const payload = {
       action: "add",
       date: dateStr,
@@ -111,7 +116,7 @@ export default function App() {
     try {
       setLoading(true);
       await fetch(GAS_URL, { method: "POST", body: JSON.stringify(payload) });
-      setForm({ systolic: "", diastolic: "", pulse: "", weight: "", location: "自宅", memo: "" });
+      setForm({ date: getNow(), systolic: "", diastolic: "", pulse: "", weight: "", location: "自宅", memo: "" });
       await fetchRecords();
       setTab("history");
     } catch (e) {
@@ -275,6 +280,13 @@ export default function App() {
 
             <div style={{ background: "rgba(30,41,59,0.7)", borderRadius: 16, padding: 24, border: "1px solid rgba(99,179,237,0.15)" }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#93c5fd", marginBottom: 20 }}>📋 新規記録</div>
+
+              {/* 日付入力 */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>📅 日時</label>
+                <input type="datetime-local" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ ...inputStyle, colorScheme: "dark" }} />
+              </div>
+
 
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 13, color: "#94a3b8", display: "block", marginBottom: 8 }}>🩺 血圧 (mmHg)</label>
